@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "mermaid-visualizer": [],
+    "excalidraw-diagram": [],
+    "notebooklm": [],
+    "skill-creator": [],
+    "obsidian-canvas-creator": []
+  }
+}

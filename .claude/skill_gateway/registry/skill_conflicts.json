@@ -1,0 +1,8 @@
+{
+  "conflicts": [
+    {
+      "skills": ["mermaid-visualizer", "excalidraw-diagram"],
+      "reason": "Both are diagram generation tools, only one should be used at a time"
+    }
+  ]
+}
