@@ -8,9 +8,10 @@ from typing import Optional
 class Config:
     """Centralized configuration for skill gateway."""
 
-    # Claude API Configuration
-    ANTHROPIC_API_KEY: Optional[str] = os.environ.get("ANTHROPIC_API_KEY")
-    CLAUDE_MODEL: str = "claude-sonnet-4-5-20250929"
+    # MiniMax API Configuration (compatible with Anthropic API)
+    ANTHROPIC_API_KEY: str = "sk-cp-hwuSmkJkDzEkH_kpLm6jUqEvKMQbJBMm0pkq4KhRHC94lnoHvhSLEJ-6fDRfycBmL_FSeIKOoiW443RUJvkaKkK-ABW4kBuY6_QbGjDh7TQ3aAACyMZdlgA"
+    ANTHROPIC_BASE_URL: str = "https://api.minimaxi.com/anthropic"
+    CLAUDE_MODEL: str = "MiniMax-M2.1"
     TEMPERATURE: float = 0.0
     MAX_TOKENS: int = 1024
 
@@ -30,7 +31,7 @@ class Config:
         errors = []
 
         if not cls.ANTHROPIC_API_KEY:
-            errors.append("ANTHROPIC_API_KEY environment variable not set")
+            errors.append("ANTHROPIC_API_KEY not configured")
 
         if not cls.SKILLS_DIR.exists():
             errors.append(f"Skills directory not found: {cls.SKILLS_DIR}")
@@ -57,7 +58,8 @@ class Config:
     def load_config(cls) -> dict:
         """Load configuration as dictionary."""
         return {
-            "anthropic_api_key": cls.ANTHROPIC_API_KEY,
+            "anthropic_api_key": cls.ANTHROPIC_API_KEY[:20] + "..." if cls.ANTHROPIC_API_KEY else None,
+            "anthropic_base_url": cls.ANTHROPIC_BASE_URL,
             "claude_model": cls.CLAUDE_MODEL,
             "temperature": cls.TEMPERATURE,
             "max_tokens": cls.MAX_TOKENS,

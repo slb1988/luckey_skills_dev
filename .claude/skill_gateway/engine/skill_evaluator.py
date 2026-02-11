@@ -43,7 +43,15 @@ class SkillEvaluator:
         if not self.client:
             if not self.config.ANTHROPIC_API_KEY:
                 raise ValueError("ANTHROPIC_API_KEY not set")
-            self.client = anthropic.Anthropic(api_key=self.config.ANTHROPIC_API_KEY)
+
+            # MiniMax requires special authentication header
+            self.client = anthropic.Anthropic(
+                api_key=self.config.ANTHROPIC_API_KEY,
+                base_url=self.config.ANTHROPIC_BASE_URL,
+                default_headers={
+                    "Authorization": f"Bearer {self.config.ANTHROPIC_API_KEY}"
+                }
+            )
 
     def discover_skills(self) -> List[SkillInfo]:
         """Discover skills from .claude/skills/ directory."""
@@ -159,7 +167,15 @@ Rules:
                 ]
             )
 
-            response_text = message.content[0].text
+            # Extract text from response, skipping thinking blocks (for MiniMax)
+            response_text = None
+            for block in message.content:
+                if block.type == "text":
+                    response_text = block.text
+                    break
+
+            if not response_text:
+                raise ValueError("No text block found in response")
 
             # Extract JSON from response
             json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
