@@ -1,0 +1,3 @@
+[submodule ".claude/skills"]
+	path = .claude/skills
+	url = https://github.com/slb1988/luckey_skills.git
