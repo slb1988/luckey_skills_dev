@@ -17,7 +17,8 @@
       "Bash(git commit:*)",
       "Bash(pip install:*)",
       "Bash(python main.py:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "mcp__playwright__browser_navigate"
     ]
   },
   "hooks": {
