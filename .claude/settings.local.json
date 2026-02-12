@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ln:*)",
+      "Bash(tree:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(chmod:*)",
+      "Bash(python3:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh repo view:*)",
+      "Bash(gh repo clone:*)",
+      "Bash(git clone:*)",
+      "Bash(git submodule add:*)",
+      "Bash(git submodule:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(pip install:*)",
+      "Bash(python main.py:*)",
+      "Bash(ls:*)"
+    ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PROJECT_DIR}/.claude/skill_gateway/hooks/user_prompt_submit.py"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -4,6 +4,7 @@
 import json
 import sys
 from pathlib import Path
+from datetime import datetime, timezone
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -12,6 +13,40 @@ from config import Config
 from engine.skill_evaluator import SkillEvaluator
 from engine.policy_engine import PolicyEngine
 from engine.audit_writer import AuditWriter
+
+
+def write_input_log(input_data: dict) -> Path:
+    """Write hook input to debug log."""
+    try:
+        # Get audit directory
+        audit_dir = Config.get_audit_dir()
+
+        # Generate timestamp
+        timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+        # Get session_id from input
+        session_id = input_data.get("session_id", "unknown")
+
+        # Create filename: timestamp_sessionid_input.json
+        sanitized_timestamp = timestamp.replace(':', '_').replace('.', '_')
+        filename = f"{sanitized_timestamp}_{session_id}_input.json"
+        log_path = audit_dir / filename
+
+        # Write input log
+        with open(log_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                "timestamp": timestamp,
+                "session_id": session_id,
+                "hook_event": "UserPromptSubmit",
+                "input_data": input_data
+            }, f, indent=2, ensure_ascii=False)
+
+        return log_path
+
+    except Exception as e:
+        # Don't fail if logging fails
+        print(f"Warning: Failed to write input log: {e}", file=sys.stderr)
+        return None
 
 
 def format_system_message(plan, rankings, threshold: float) -> str:
@@ -58,7 +93,12 @@ def main():
     try:
         # Read input from stdin
         input_data = json.loads(sys.stdin.read())
-        user_prompt = input_data.get("user_prompt", "")
+
+        # Write input log for debugging
+        write_input_log(input_data)
+
+        # Claude Code uses "prompt" field, not "user_prompt"
+        user_prompt = input_data.get("prompt", "") or input_data.get("user_prompt", "")
 
         if not user_prompt:
             # No prompt, just continue
