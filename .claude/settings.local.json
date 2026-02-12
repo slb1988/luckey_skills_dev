@@ -6,7 +6,7 @@
       "Bash(find:*)",
       "Bash(wc:*)",
       "Bash(chmod:*)",
-      "Bash(python3:*)",
+      "Bash(python:*)",
       "WebFetch(domain:github.com)",
       "Bash(gh repo view:*)",
       "Bash(gh repo clone:*)",
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ${CLAUDE_PROJECT_DIR}/.claude/skill_gateway/hooks/user_prompt_submit.py"
+            "command": "python .claude/skill_gateway/hooks/user_prompt_submit.py"
           }
         ]
       }

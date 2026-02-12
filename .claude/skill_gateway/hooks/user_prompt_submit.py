@@ -15,37 +15,29 @@ from engine.policy_engine import PolicyEngine
 from engine.audit_writer import AuditWriter
 
 
-def write_input_log(input_data: dict) -> Path:
-    """Write hook input to debug log."""
+def append_log_entry(session_id: str, log_type: str, data: dict):
+    """Append a log entry to session JSONL file."""
     try:
-        # Get audit directory
         audit_dir = Config.get_audit_dir()
+        log_path = audit_dir / f"{session_id}.jsonl"
 
-        # Generate timestamp
-        timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        # Prepare log entry (single line JSON)
+        log_entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+            "session_id": session_id,
+            "log_type": log_type,
+            "data": data
+        }
 
-        # Get session_id from input
-        session_id = input_data.get("session_id", "unknown")
-
-        # Create filename: timestamp_sessionid_input.json
-        sanitized_timestamp = timestamp.replace(':', '_').replace('.', '_')
-        filename = f"{sanitized_timestamp}_{session_id}_input.json"
-        log_path = audit_dir / filename
-
-        # Write input log
-        with open(log_path, 'w', encoding='utf-8') as f:
-            json.dump({
-                "timestamp": timestamp,
-                "session_id": session_id,
-                "hook_event": "UserPromptSubmit",
-                "input_data": input_data
-            }, f, indent=2, ensure_ascii=False)
+        # Append to JSONL file
+        with open(log_path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
 
         return log_path
 
     except Exception as e:
         # Don't fail if logging fails
-        print(f"Warning: Failed to write input log: {e}", file=sys.stderr)
+        print(f"Warning: Failed to append log: {e}", file=sys.stderr)
         return None
 
 
@@ -94,8 +86,16 @@ def main():
         # Read input from stdin
         input_data = json.loads(sys.stdin.read())
 
-        # Write input log for debugging
-        write_input_log(input_data)
+        # Get session_id
+        session_id = input_data.get("session_id", "unknown")
+
+        # Log hook input
+        append_log_entry(session_id, "hook_input", {
+            "hook_event": "UserPromptSubmit",
+            "cwd": input_data.get("cwd"),
+            "permission_mode": input_data.get("permission_mode"),
+            "prompt": input_data.get("prompt")
+        })
 
         # Claude Code uses "prompt" field, not "user_prompt"
         user_prompt = input_data.get("prompt", "") or input_data.get("user_prompt", "")
@@ -107,9 +107,8 @@ def main():
             sys.exit(0)
 
         # Initialize components
-        evaluator = SkillEvaluator()
+        evaluator = SkillEvaluator(session_id=session_id)
         policy_engine = PolicyEngine()
-        audit_writer = AuditWriter()
 
         # Evaluate skills
         rankings = evaluator.evaluate(user_prompt)
@@ -117,8 +116,15 @@ def main():
         # Apply policies
         plan = policy_engine.apply_policies(rankings)
 
-        # Write audit log
-        audit_path = audit_writer.write_audit(user_prompt, rankings, plan)
+        # Log evaluation result
+        append_log_entry(session_id, "evaluation_result", {
+            "user_prompt": user_prompt,
+            "llm_ranking": [{"skill": r.skill, "confidence": r.confidence} for r in rankings],
+            "threshold": Config.CONFIDENCE_THRESHOLD,
+            "activated_skills": plan.activated,
+            "rejected_skills": plan.rejected,
+            "execution_order": plan.execution_order
+        })
 
         # Format system message
         system_message = format_system_message(

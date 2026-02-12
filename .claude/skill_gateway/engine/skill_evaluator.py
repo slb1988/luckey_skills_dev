@@ -6,6 +6,7 @@ import requests
 from pathlib import Path
 from typing import List, Optional
 import sys
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -33,10 +34,11 @@ class EvaluationResponse(BaseModel):
 class SkillEvaluator:
     """Evaluate skills using backend API or direct Claude API."""
 
-    def __init__(self):
+    def __init__(self, session_id: Optional[str] = None):
         self.config = Config
         self.client = None
         self._skills_cache: Optional[List[SkillInfo]] = None
+        self.session_id = session_id  # For logging
 
     def _init_client(self):
         """Initialize Anthropic client lazily (for legacy mode only)."""
@@ -55,6 +57,36 @@ class SkillEvaluator:
                     "Authorization": f"Bearer {self.config.ANTHROPIC_API_KEY}"
                 }
             )
+
+    def _log_request(self, request_data: dict, response_data: dict, error: Optional[str] = None):
+        """Append request/response to session JSONL log."""
+        if not self.session_id:
+            return  # No session ID, skip logging
+
+        try:
+            audit_dir = self.config.get_audit_dir()
+            log_file = audit_dir / f"{self.session_id}.jsonl"
+
+            # Prepare log entry (single line JSON)
+            log_entry = {
+                "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+                "session_id": self.session_id,
+                "log_type": "backend_request",
+                "data": {
+                    "request": request_data,
+                    "response": response_data if not error else None,
+                    "error": error,
+                    "backend_url": self.config.get_backend_url()
+                }
+            }
+
+            # Append to JSONL file
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
+
+        except Exception as e:
+            # Don't fail if logging fails
+            print(f"Warning: Failed to log request: {e}", file=sys.stderr)
 
     def discover_skills(self) -> List[SkillInfo]:
         """Discover skills from .claude/skills/ directory."""
@@ -169,6 +201,7 @@ Rules:
         }
 
         try:
+            # 发送请求
             response = requests.post(
                 f"{backend_url}/skill_evaluator/evaluate",
                 json=request_data,
@@ -180,13 +213,20 @@ Rules:
             # 后端返回格式: {"status": {...}, "result": {"candidates": [...]}}
             response_json = response.json()
             if response_json.get("status", {}).get("code") != 0:
-                raise RuntimeError(f"Backend API error: {response_json.get('status', {}).get('message', 'Unknown error')}")
+                error_msg = response_json.get('status', {}).get('message', 'Unknown error')
+                self._log_request(request_data, response_json, error=error_msg)
+                raise RuntimeError(f"Backend API error: {error_msg}")
+
+            # 记录成功的请求和响应
+            self._log_request(request_data, response_json, error=None)
 
             return response_json.get("result", {})
 
         except requests.RequestException as e:
+            self._log_request(request_data, {}, error=str(e))
             raise RuntimeError(f"Backend API request failed: {e}")
         except json.JSONDecodeError as e:
+            self._log_request(request_data, {}, error=str(e))
             raise RuntimeError(f"Failed to parse backend API response: {e}")
 
     def call_claude_api(self, prompt: str) -> dict:

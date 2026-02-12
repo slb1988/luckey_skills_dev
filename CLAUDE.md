@@ -282,22 +282,35 @@ python3 .claude/skill_gateway/main.py classify "创建流程图"
 
 ### 审计日志
 
-位置: `.claude/skill_gateway/.audit/`（已 gitignore）
+位置: `.claude/skill_gateway/.audit/<session-id>.jsonl`（已 gitignore）
 
-示例:
-```json
-{
-  "timestamp": "2026-02-12T00:47:38Z",
-  "user_prompt": "创建 Mermaid 图表",
-  "llm_ranking": [
-    {"skill": "mermaid-visualizer", "confidence": 0.95}
-  ],
-  "activated_skills": ["mermaid-visualizer"],
-  "rejected_skills": [],
-  "execution_order": ["mermaid-visualizer"],
-  "prompt_hash": "sha256:..."
-}
+**格式**: JSON Lines (JSONL) - 每行一个 JSON 对象，方便追加和逐行解析
+
+示例 `.jsonl` 文件内容:
+```jsonl
+{"timestamp":"2026-02-12T14:47:04Z","session_id":"abc-123","log_type":"hook_input","data":{"prompt":"创建流程图"}}
+{"timestamp":"2026-02-12T14:47:05Z","session_id":"abc-123","log_type":"backend_request","data":{"request":{...},"response":{...}}}
+{"timestamp":"2026-02-12T14:47:05Z","session_id":"abc-123","log_type":"evaluation_result","data":{"activated_skills":["mermaid-visualizer"]}}
 ```
+
+**日志类型**:
+- `hook_input`: UserPromptSubmit hook 触发时的输入
+- `backend_request`: 后端 API 请求/响应详情
+- `evaluation_result`: 最终的技能激活决策
+
+**查看日志**:
+```bash
+# 列出所有会话
+python .claude/skill_gateway/view_logs.py list
+
+# 查看特定会话的日志
+python .claude/skill_gateway/view_logs.py <session-id>
+
+# 只看最后 10 条
+python .claude/skill_gateway/view_logs.py <session-id> --tail 10
+```
+
+详见: `.claude/skill_gateway/LOGGING.md`
 
 ### 测试验证
 
