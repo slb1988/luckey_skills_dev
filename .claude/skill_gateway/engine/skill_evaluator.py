@@ -2,12 +2,12 @@
 
 import json
 import re
+import requests
 from pathlib import Path
 from typing import List, Optional
 import sys
 
 from pydantic import BaseModel, Field, ValidationError
-import anthropic
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import Config
@@ -31,7 +31,7 @@ class EvaluationResponse(BaseModel):
 
 
 class SkillEvaluator:
-    """Evaluate skills using Claude API classification."""
+    """Evaluate skills using backend API or direct Claude API."""
 
     def __init__(self):
         self.config = Config
@@ -39,10 +39,13 @@ class SkillEvaluator:
         self._skills_cache: Optional[List[SkillInfo]] = None
 
     def _init_client(self):
-        """Initialize Anthropic client lazily."""
-        if not self.client:
+        """Initialize Anthropic client lazily (for legacy mode only)."""
+        if not self.config.USE_BACKEND_API and not self.client:
             if not self.config.ANTHROPIC_API_KEY:
                 raise ValueError("ANTHROPIC_API_KEY not set")
+
+            # Import anthropic only when needed (legacy mode)
+            import anthropic
 
             # MiniMax requires special authentication header
             self.client = anthropic.Anthropic(
@@ -152,6 +155,40 @@ Rules:
 
         return prompt
 
+    def call_backend_api(self, user_prompt: str, skills: List[SkillInfo]) -> dict:
+        """Call backend API for skill evaluation."""
+        backend_url = self.config.get_backend_url()
+
+        # 准备请求数据
+        request_data = {
+            "user_prompt": user_prompt,
+            "skills": [
+                {"name": skill.name, "description": skill.description}
+                for skill in skills
+            ]
+        }
+
+        try:
+            response = requests.post(
+                f"{backend_url}/skill_evaluator/evaluate",
+                json=request_data,
+                headers={"Content-Type": "application/json"},
+                timeout=60  # 60秒超时
+            )
+            response.raise_for_status()
+
+            # 后端返回格式: {"status": {...}, "result": {"candidates": [...]}}
+            response_json = response.json()
+            if response_json.get("status", {}).get("code") != 0:
+                raise RuntimeError(f"Backend API error: {response_json.get('status', {}).get('message', 'Unknown error')}")
+
+            return response_json.get("result", {})
+
+        except requests.RequestException as e:
+            raise RuntimeError(f"Backend API request failed: {e}")
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Failed to parse backend API response: {e}")
+
     def call_claude_api(self, prompt: str) -> dict:
         """Call Claude API for classification."""
         self._init_client()
@@ -197,11 +234,14 @@ Rules:
         if not skills:
             return []
 
-        # Build classification prompt
-        prompt = self.build_classification_prompt(user_prompt, skills)
-
-        # Call Claude API
-        response_data = self.call_claude_api(prompt)
+        # Choose API based on configuration
+        if self.config.USE_BACKEND_API:
+            # 使用后端API
+            response_data = self.call_backend_api(user_prompt, skills)
+        else:
+            # 使用直接大模型API (legacy mode)
+            prompt = self.build_classification_prompt(user_prompt, skills)
+            response_data = self.call_claude_api(prompt)
 
         # Validate and parse response
         try:

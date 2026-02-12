@@ -8,8 +8,14 @@ from typing import Optional
 class Config:
     """Centralized configuration for skill gateway."""
 
-    # MiniMax API Configuration (compatible with Anthropic API)
-    ANTHROPIC_API_KEY: str = "sk-cp-hwuSmkJkDzEkH_kpLm6jUqEvKMQbJBMm0pkq4KhRHC94lnoHvhSLEJ-6fDRfycBmL_FSeIKOoiW443RUJvkaKkK-ABW4kBuY6_QbGjDh7TQ3aAACyMZdlgA"
+    # Backend API Configuration
+    USE_BACKEND_API: bool = True  # 使用后端API而不是直接调用大模型
+    BACKEND_DEV_URL: str = "http://127.0.0.1:5000"  # 开发环境后端URL
+    BACKEND_PROD_URL: str = "http://127.0.0.1:5000"  # 生产环境后端URL (占位)
+    BACKEND_ENVIRONMENT: str = "dev"  # dev | prod
+
+    # Legacy MiniMax API Configuration (废弃，保留向后兼容)
+    ANTHROPIC_API_KEY: str = ""  # 不再需要，后端处理
     ANTHROPIC_BASE_URL: str = "https://api.minimaxi.com/anthropic"
     CLAUDE_MODEL: str = "MiniMax-M2.1"
     TEMPERATURE: float = 0.0
@@ -26,12 +32,25 @@ class Config:
     AUDIT_DIR: Path = SKILL_GATEWAY_DIR / ".audit"
 
     @classmethod
+    def get_backend_url(cls) -> str:
+        """Get backend URL based on environment."""
+        if cls.BACKEND_ENVIRONMENT == "prod":
+            return cls.BACKEND_PROD_URL
+        return cls.BACKEND_DEV_URL
+
+    @classmethod
     def validate(cls) -> list[str]:
         """Validate configuration and return list of errors."""
         errors = []
 
-        if not cls.ANTHROPIC_API_KEY:
-            errors.append("ANTHROPIC_API_KEY not configured")
+        if cls.USE_BACKEND_API:
+            backend_url = cls.get_backend_url()
+            if not backend_url:
+                errors.append("Backend URL not configured")
+        else:
+            # 只有在不使用后端API时才检查API Key
+            if not cls.ANTHROPIC_API_KEY:
+                errors.append("ANTHROPIC_API_KEY not configured")
 
         if not cls.SKILLS_DIR.exists():
             errors.append(f"Skills directory not found: {cls.SKILLS_DIR}")
