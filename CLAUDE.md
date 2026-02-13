@@ -4,16 +4,18 @@ This document describes how to manage Claude Code skills using git submodules in
 
 ## Overview
 
-The `luckey_skills_dev` repository uses a symlink (`.claude/skills → /Users/sun/Documents/GitHub/luckey_skills`) to point to the actual skills repository. All skill management should be done in the `luckey_skills` repository.
+The `luckey_skills_dev` repository uses `.claude/skills` as a git submodule pointing to the `luckey_skills` repository (https://github.com/slb1988/luckey_skills.git). All skill management should be done within this submodule.
+
+The `manage_skill_links.py` script automatically creates directory junctions (Windows) or symlinks (macOS/Linux) to make nested skills in plugin packs discoverable by Claude Code. On Windows, junctions are used instead of symlinks as they don't require administrator privileges.
 
 ## Adding a New Git Submodule
 
 Follow these steps to add a new GitHub repository as a git submodule:
 
-### Step 1: Navigate to the Skills Repository
+### Step 1: Navigate to the Skills Directory
 
 ```bash
-cd /Users/sun/Documents/GitHub/luckey_skills
+cd .claude/skills
 ```
 
 ### Step 2: Add the Submodule
@@ -33,6 +35,12 @@ git submodule add https://github.com/teng-lin/notebooklm-py.git notebooklm-py
 git submodule update --init --recursive
 ```
 
+**Note:** If submodules appear empty after cloning, run:
+```bash
+cd <submodule-directory>
+git reset --hard HEAD
+```
+
 ### Step 4: Make the Skill Discoverable (if needed)
 
 **For plugin packs with marketplace.json:**
@@ -40,23 +48,34 @@ git submodule update --init --recursive
 If the submodule contains a `.claude-plugin/marketplace.json` file (like `axton-obsidian-visual-skills`), use the symlink manager script:
 
 ```bash
-cd /Users/sun/Documents/GitHub/luckey_skills_dev
+# From project root
 python .claude/scripts/manage_skill_links.py setup
 ```
 
-This will automatically create symlinks to all nested skills defined in the marketplace.json.
+This will automatically create directory junctions (Windows) or symlinks (macOS/Linux) to all nested skills defined in the marketplace.json. No administrator privileges required on Windows!
 
 **For standalone skills with non-root SKILL.md:**
 
-If the SKILL.md file is not at the root of the submodule, create a manual symlink:
+If the SKILL.md file is not at the root of the submodule, create a manual junction/symlink:
 
+Windows:
 ```bash
-cd /Users/sun/Documents/GitHub/luckey_skills
+cd .claude/skills
+mklink /J <skill-name> <submodule-name>\<path-to-skill-dir>
+```
+
+macOS/Linux:
+```bash
+cd .claude/skills
 ln -s <submodule-name>/<path-to-skill-dir> <skill-name>
 ```
 
 Example:
 ```bash
+# Windows
+mklink /J notebooklm notebooklm-py\src\notebooklm\data
+
+# macOS/Linux
 ln -s notebooklm-py/src/notebooklm/data notebooklm
 ```
 
@@ -67,7 +86,8 @@ No additional steps needed. Claude Code will discover the skill automatically.
 ### Step 5: Commit the Changes
 
 ```bash
-git add .gitmodules <submodule-directory> <any-symlinks>
+# In .claude/skills directory
+git add .gitmodules <submodule-directory> <any-junctions-or-symlinks>
 git commit -m "Add <skill-name> as git submodule
 
 - Added <GITHUB_REPO_URL> as a submodule
@@ -75,6 +95,8 @@ git commit -m "Add <skill-name> as git submodule
 
 Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
 ```
+
+**Note:** Git does not track junction/symlink targets on Windows, only their existence. Make sure to document any manual junctions in this file's "Current Submodules" section.
 
 ### Step 6: Push to Remote (Optional)
 
@@ -87,14 +109,14 @@ git push origin main
 ### Update All Submodules
 
 ```bash
-cd /Users/sun/Documents/GitHub/luckey_skills
+cd .claude/skills
 git submodule update --remote --merge
 ```
 
 ### Update a Specific Submodule
 
 ```bash
-cd /Users/sun/Documents/GitHub/luckey_skills/<submodule-name>
+cd .claude/skills/<submodule-name>
 git pull origin main
 cd ..
 git add <submodule-name>
@@ -103,18 +125,28 @@ git commit -m "Update <submodule-name> to latest version"
 
 ### Clone Repository with Submodules
 
-When cloning the luckey_skills repository on a new machine:
+When cloning the luckey_skills_dev repository on a new machine:
 
 ```bash
-git clone <luckey_skills-repo-url>
-cd luckey_skills
+git clone https://github.com/<your-username>/luckey_skills_dev.git
+cd luckey_skills_dev
 git submodule update --init --recursive
+
+# If .claude/skills submodule has nested submodules, initialize them too:
+cd .claude/skills
+git submodule update --init --recursive
+cd ../..
+
+# Create junctions/symlinks for plugin packs:
+python .claude/scripts/manage_skill_links.py setup
 ```
 
 Or clone with submodules in one command:
 
 ```bash
-git clone --recurse-submodules <luckey_skills-repo-url>
+git clone --recurse-submodules https://github.com/<your-username>/luckey_skills_dev.git
+cd luckey_skills_dev
+python .claude/scripts/manage_skill_links.py setup
 ```
 
 ## Current Submodules
@@ -138,7 +170,7 @@ git clone --recurse-submodules <luckey_skills-repo-url>
 If you need to remove a submodule:
 
 ```bash
-cd /Users/sun/Documents/GitHub/luckey_skills
+cd .claude/skills
 
 # Remove the submodule entry from .git/config
 git submodule deinit -f <submodule-name>
@@ -149,11 +181,68 @@ rm -rf .git/modules/<submodule-name>
 # Remove the submodule entry from the working tree
 git rm -f <submodule-name>
 
-# Remove any associated symlinks
-rm <symlink-name>
+# Remove any associated junctions/symlinks (if applicable)
+# Windows: rmdir <junction-name> (DO NOT use /S flag!)
+# macOS/Linux: rm <symlink-name>
+
+# Or use the cleanup script:
+cd ../..
+python .claude/scripts/manage_skill_links.py cleanup
 
 # Commit the changes
+cd .claude/skills
 git commit -m "Remove <submodule-name> submodule"
+```
+
+## Symlink Manager Script
+
+The `manage_skill_links.py` script automates the creation and management of directory junctions (Windows) or symlinks (macOS/Linux) for nested skills in plugin packs.
+
+### Features
+
+- **No Admin Required (Windows)**: Uses directory junctions (`mklink /J`) instead of symlinks, which don't require administrator privileges
+- **Cross-Platform**: Automatically detects OS and uses appropriate link type (junction on Windows, symlink on macOS/Linux)
+- **Smart Detection**: Automatically finds plugin packs with `.claude-plugin/marketplace.json` and creates links for all nested skills
+- **Safe Operations**: Checks for existing links and prevents accidental overwrites
+- **Path Normalization**: Handles Windows long path prefix (`\\?\`) automatically
+
+### Commands
+
+```bash
+# Show current status of skills and links
+python .claude/scripts/manage_skill_links.py status
+
+# Create junctions/symlinks for all nested skills
+python .claude/scripts/manage_skill_links.py setup
+
+# Preview what would be created (without making changes)
+python .claude/scripts/manage_skill_links.py setup --dry-run
+
+# Remove all managed junctions/symlinks
+python .claude/scripts/manage_skill_links.py cleanup
+
+# Preview what would be removed (without making changes)
+python .claude/scripts/manage_skill_links.py cleanup --dry-run
+```
+
+### How It Works
+
+1. **Discovery**: Scans `.claude/skills` for directories containing `.claude-plugin/marketplace.json`
+2. **Extraction**: Reads the marketplace.json to find nested skill paths
+3. **Link Creation**: Creates directory junctions (Windows) or symlinks (macOS/Linux) at the root of `.claude/skills`
+4. **Verification**: Links point to the nested skill directories within plugin packs
+
+Example:
+```
+.claude/skills/
+├── axton-obsidian-visual-skills/          # Plugin pack (submodule)
+│   ├── .claude-plugin/marketplace.json
+│   ├── excalidraw-diagram/                # Nested skill
+│   ├── mermaid-visualizer/                # Nested skill
+│   └── obsidian-canvas-creator/           # Nested skill
+├── excalidraw-diagram/                    # → Junction to axton-obsidian-visual-skills/excalidraw-diagram
+├── mermaid-visualizer/                    # → Junction to axton-obsidian-visual-skills/mermaid-visualizer
+└── obsidian-canvas-creator/               # → Junction to axton-obsidian-visual-skills/obsidian-canvas-creator
 ```
 
 ## Troubleshooting
@@ -180,21 +269,25 @@ git add <submodule-directory>
 git commit -m "Update submodule with conflict resolution"
 ```
 
-### Permission Issues with Symlinks
+### Empty Submodule Directories
 
-On Windows, symlink creation may require:
-- Developer Mode enabled, OR
-- Running as Administrator
+If a submodule directory appears empty after cloning or updating:
 
-See `.claude/scripts/README.md` for more details.
+```bash
+cd .claude/skills/<submodule-name>
+git reset --hard HEAD
+```
+
+This forces Git to checkout all files in the submodule.
 
 ## Best Practices
 
-1. **Always commit submodule updates**: When a submodule is updated, commit the change in the parent repository
+1. **Always commit submodule updates**: When a submodule is updated, commit the change in both the submodule and parent repository
 2. **Use descriptive commit messages**: Include the submodule URL and setup notes
-3. **Document custom symlinks**: Add entries to the "Current Submodules" section when creating manual symlinks
-4. **Keep CLAUDE.md updated**: Add new submodules to the documentation as they are added
-5. **Test skill discovery**: After adding a submodule, verify the skill appears in Claude Code
+3. **Use the script for plugin packs**: Always use `manage_skill_links.py setup` for plugin packs instead of creating manual junctions/symlinks
+4. **Document custom junctions/symlinks**: Add entries to the "Current Submodules" section when creating manual links
+5. **Keep CLAUDE.md updated**: Add new submodules to the documentation as they are added
+6. **Test skill discovery**: After adding a submodule, verify the skill appears in Claude Code (check with `manage_skill_links.py status`)
 
 ## Skill Activation Gateway
 

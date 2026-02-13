@@ -19,6 +19,9 @@
       "Bash(python main.py:*)",
       "Bash(ls:*)",
       "mcp__playwright__browser_navigate"
+      "Bash(git checkout:*)",
+      "Bash(git reset:*)",
+      "Bash(python3:*)"
     ]
   },
   "hooks": {

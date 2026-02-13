@@ -58,6 +58,8 @@ def get_platform() -> str:
 def create_symlink(target: Path, link: Path) -> Tuple[bool, str]:
     """
     Create a symlink in a cross-platform manner.
+    On Windows, uses junction points (mklink /J) which don't require admin privileges.
+    On macOS/Linux, uses standard symlinks.
 
     Args:
         target: Path to the target directory
@@ -72,64 +74,137 @@ def create_symlink(target: Path, link: Path) -> Tuple[bool, str]:
             return False, f"Target does not exist: {target}"
 
         # Check if link already exists
-        if link.exists() or link.is_symlink():
-            if link.is_symlink():
+        if link.exists() or is_junction_or_symlink(link):
+            if is_junction_or_symlink(link):
                 try:
-                    if link.readlink() == target:
+                    existing_target = get_link_target(link).resolve()
+                    if existing_target == target.resolve():
                         return True, "Already exists with correct target"
                 except Exception:
                     pass
             return False, f"Link already exists: {link}"
 
-        # Create symlink
-        os.symlink(target, link, target_is_directory=True)
-        return True, "Created successfully"
+        # On Windows, use junction points which don't require admin privileges
+        if platform.system() == "Windows":
+            import subprocess
+            # mklink /J creates a directory junction
+            # Note: target must be absolute path for junctions
+            target_abs = target.resolve()
+            result = subprocess.run(
+                ['cmd', '/c', 'mklink', '/J', str(link), str(target_abs)],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                return True, "Created successfully (junction)"
+            else:
+                return False, f"Failed to create junction: {result.stderr}"
+        else:
+            # On macOS/Linux, use standard symlinks
+            os.symlink(target, link, target_is_directory=True)
+            return True, "Created successfully"
 
     except OSError as e:
-        # Windows permission issue special handling
-        if platform.system() == "Windows" and "privilege" in str(e).lower():
-            msg = (
-                "Permission denied. On Windows, creating symlinks requires:\n"
-                "  1. Developer Mode enabled (Settings → Update & Security → Developer Options)\n"
-                "  2. OR running as Administrator"
-            )
-            return False, msg
         return False, str(e)
+
+
+def is_junction_or_symlink(path: Path) -> bool:
+    """
+    Check if a path is a symlink or Windows junction.
+
+    Args:
+        path: Path to check
+
+    Returns:
+        True if the path is a symlink or junction
+    """
+    # Standard symlink check
+    if path.is_symlink():
+        return True
+
+    # Windows junction check (junctions are not detected by is_symlink)
+    if platform.system() == "Windows" and path.exists():
+        try:
+            import stat
+            # Junctions have the reparse point attribute
+            st = os.stat(path, follow_symlinks=False)
+            # Check for reparse point (directory junction)
+            if st.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+                return True
+        except (AttributeError, OSError):
+            pass
+
+    return False
+
+
+def get_link_target(link: Path) -> Path:
+    """
+    Get the target of a symlink or Windows junction.
+
+    Args:
+        link: Path to symlink/junction
+
+    Returns:
+        Target path (normalized, without \\?\ prefix)
+    """
+    try:
+        # Try standard readlink first
+        target = link.readlink()
+        # On Windows, remove the \\?\ prefix if present
+        target_str = str(target)
+        if target_str.startswith('\\\\?\\'):
+            target = Path(target_str[4:])
+        return target
+    except (OSError, NotImplementedError):
+        # On Windows, for junctions, we can use resolve()
+        if platform.system() == "Windows":
+            resolved = link.resolve()
+            # If resolve() returns a different path, it's a link
+            if resolved != link.absolute():
+                return resolved
+    return link
 
 
 def is_managed_symlink(link: Path, skills_dir: Path) -> bool:
     """
-    Check if a symlink is managed by this script (points to a plugin pack).
+    Check if a symlink/junction is managed by this script (points to a plugin pack).
 
     Args:
         link: Path to check
         skills_dir: Root skills directory
 
     Returns:
-        True if this is a managed symlink
+        True if this is a managed symlink/junction
     """
-    if not link.is_symlink():
+    if not is_junction_or_symlink(link):
         return False
 
     try:
-        target = link.readlink()
+        target = get_link_target(link)
         # Make target absolute if it's relative
         if not target.is_absolute():
             target = (link.parent / target).resolve()
+        else:
+            target = target.resolve()
+
+        # Resolve skills_dir to absolute path for comparison
+        skills_dir = skills_dir.resolve()
 
         # Check if target is inside a plugin pack
         for item in skills_dir.iterdir():
-            if not item.is_dir():
+            if not item.is_dir() or is_junction_or_symlink(item):
                 continue
             plugin_marker = item / ".claude-plugin" / "marketplace.json"
             if plugin_marker.exists():
                 try:
-                    if target.is_relative_to(item):
+                    item_resolved = item.resolve()
+                    # Check if target is inside this plugin pack
+                    if target.is_relative_to(item_resolved):
                         return True
                 except (ValueError, AttributeError):
                     # is_relative_to not available in Python < 3.9
                     try:
-                        target.relative_to(item)
+                        target.relative_to(item_resolved)
                         return True
                     except ValueError:
                         pass
@@ -152,7 +227,7 @@ def find_plugin_packs(skills_dir: Path) -> Dict[str, List[Path]]:
     plugin_packs = {}
 
     for item in skills_dir.iterdir():
-        if not item.is_dir() or item.is_symlink():
+        if not item.is_dir() or is_junction_or_symlink(item):
             continue
 
         marketplace_file = item / ".claude-plugin" / "marketplace.json"
@@ -215,7 +290,7 @@ def find_standalone_skills(skills_dir: Path) -> List[Path]:
     standalone = []
 
     for item in skills_dir.iterdir():
-        if not item.is_dir() or item.is_symlink():
+        if not item.is_dir() or is_junction_or_symlink(item):
             continue
 
         # Check if it has SKILL.md directly
@@ -389,14 +464,16 @@ def show_status(skills_dir: Path) -> None:
         print(f"  {Colors.YELLOW}(None){Colors.RESET}")
     print()
 
-    # Find active symlinks
+    # Find active symlinks/junctions
     active_links = []
     for item in skills_dir.iterdir():
         if is_managed_symlink(item, skills_dir):
             try:
-                target = item.readlink()
+                target = get_link_target(item)
                 if not target.is_absolute():
                     target = (item.parent / target).resolve()
+                else:
+                    target = target.resolve()
                 active_links.append((item.name, target))
             except Exception:
                 active_links.append((item.name, "unknown"))
