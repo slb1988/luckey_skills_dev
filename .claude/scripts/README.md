@@ -1,6 +1,6 @@
-# Claude Skills Symlink Manager
+# Claude Skills Link Manager
 
-This script manages symlinks for nested skills in Claude plugin packs, making them discoverable by Claude Code.
+This script manages directory junctions (Windows) or symlinks (macOS/Linux) for nested skills in Claude plugin packs, making them discoverable by Claude Code.
 
 ## Problem
 
@@ -20,7 +20,7 @@ The nested skills are not recognized because Claude Code doesn't recursively sca
 
 ## Solution
 
-This script creates symlinks at the top level of `.claude/skills/` that point to nested skills within plugin packs, making them discoverable:
+This script creates directory junctions (Windows) or symlinks (macOS/Linux) at the top level of `.claude/skills/` that point to nested skills within plugin packs, making them discoverable:
 
 ```
 .claude/skills/
@@ -29,6 +29,8 @@ This script creates symlinks at the top level of `.claude/skills/` that point to
 ├── mermaid-visualizer → axton-obsidian-visual-skills/mermaid-visualizer/
 └── obsidian-canvas-creator → axton-obsidian-visual-skills/obsidian-canvas-creator/
 ```
+
+On Windows, directory junctions are used instead of symlinks because they don't require administrator privileges.
 
 ## Usage
 
@@ -41,28 +43,28 @@ python .claude/scripts/manage_skill_links.py status
 Shows:
 - Standalone skills (direct subdirectories with SKILL.md)
 - Plugin packs and their nested skills
-- Currently active symlinks
+- Currently active junctions/symlinks
 
-### Create Symlinks
+### Create Junctions/Symlinks
 
 ```bash
 python .claude/scripts/manage_skill_links.py setup
 ```
 
-Creates symlinks for all nested skills in plugin packs.
+Creates directory junctions (Windows) or symlinks (macOS/Linux) for all nested skills in plugin packs.
 
 **Preview changes without making them:**
 ```bash
 python .claude/scripts/manage_skill_links.py setup --dry-run
 ```
 
-### Remove Symlinks
+### Remove Junctions/Symlinks
 
 ```bash
 python .claude/scripts/manage_skill_links.py cleanup
 ```
 
-Removes all managed symlinks, reverting to the original directory structure.
+Removes all managed junctions/symlinks, reverting to the original directory structure.
 
 **Preview what will be removed:**
 ```bash
@@ -93,34 +95,32 @@ python .claude/scripts/manage_skill_links.py cleanup --dry-run
 
 The script works on Mac, Linux, and Windows.
 
-### Windows Requirements
+### Windows Implementation
 
-On Windows, creating symlinks requires one of:
+On Windows, the script uses **directory junctions** (`mklink /J`) instead of symlinks:
 
-1. **Developer Mode** (recommended):
-   - Settings → Update & Security → Developer Options → Enable Developer Mode
-   - No admin privileges needed after enabling
+- **No admin privileges required** - Junctions can be created by any user
+- **Same functionality** - Junctions work identically to symlinks for directory links
+- **Automatic detection** - The script automatically detects Windows and uses junctions
 
-2. **Administrator privileges**:
-   - Run Command Prompt or PowerShell as Administrator
-
-The script will provide clear error messages if permissions are insufficient.
+No special configuration or permissions needed on Windows!
 
 ## How It Works
 
 1. **Detection**: Scans `.claude/skills/` for directories containing `.claude-plugin/marketplace.json`
 2. **Parsing**: Reads marketplace.json to identify nested skill paths
 3. **Validation**: Verifies each nested directory contains a `SKILL.md` file
-4. **Linking**: Creates symlinks at the top level pointing to nested skills
-5. **Cleanup**: Removes only symlinks that point to plugin pack subdirectories
+4. **Linking**: Creates directory junctions (Windows) or symlinks (macOS/Linux) at the top level pointing to nested skills
+5. **Cleanup**: Removes only junctions/symlinks that point to plugin pack subdirectories
 
 ## Safety Features
 
-- Only removes symlinks (never deletes actual directories)
-- Detects conflicts before creating symlinks
+- Only removes junctions/symlinks (never deletes actual directories)
+- Detects conflicts before creating links
 - Validates paths before operations
 - Dry-run mode for previewing changes
 - Clear error messages with recovery suggestions
+- Path normalization (handles Windows `\\?\` prefix automatically)
 
 ## Plugin Pack Structure
 
@@ -152,9 +152,14 @@ The script supports marketplace.json files with either structure:
 
 ## Verification
 
-After running `setup`, verify the symlinks:
+After running `setup`, verify the links:
 
 **Mac/Linux:**
+```bash
+ls -la .claude/skills/
+```
+
+**Windows (Git Bash):**
 ```bash
 ls -la .claude/skills/
 ```
@@ -164,25 +169,34 @@ ls -la .claude/skills/
 Get-ChildItem .claude/skills/ | Select-Object Mode, Name, Target
 ```
 
-You should see symlinks (indicated by `l` on Unix or `SYMLINK` mode on Windows) pointing to plugin pack subdirectories.
+**Using the script:**
+```bash
+python .claude/scripts/manage_skill_links.py status
+```
+
+You should see directory junctions (Windows) or symlinks (indicated by `l` on Unix) pointing to plugin pack subdirectories.
 
 ## Troubleshooting
 
-### Symlinks not created
+### Junctions/Symlinks not created
 
 1. Check that the plugin pack has `.claude-plugin/marketplace.json`
 2. Verify nested directories contain `SKILL.md` files
 3. Run with `--verbose` to see detailed error messages
-
-### Permission denied on Windows
-
-Enable Developer Mode or run as Administrator (see Windows Requirements above).
+4. Check for conflicts with existing directories (use `--dry-run` first)
 
 ### Skills still not recognized by Claude Code
 
-1. Verify symlinks exist: `python .claude/scripts/manage_skill_links.py status`
+1. Verify junctions/symlinks exist: `python .claude/scripts/manage_skill_links.py status`
 2. Restart Claude Code to refresh the skills list
-3. Check that symlinked directories contain valid `SKILL.md` files
+3. Check that linked directories contain valid `SKILL.md` files
+
+### Junction shows as directory on Windows
+
+This is normal! Windows directory junctions appear as regular directories in most tools, but they function as links. Verify with:
+```bash
+python .claude/scripts/manage_skill_links.py status
+```
 
 ## License
 
